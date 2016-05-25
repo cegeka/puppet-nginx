@@ -15,8 +15,11 @@ describe "nginx::resource::vhost define:" do
       file { '/var/www/www.puppetlabs.com/index.html': ensure  => file, content => 'Hello from www\n', }
       "
 
+      # Run it twice and test for idempotency
       apply_manifest(pp, :catch_failures => true)
+      apply_manifest(pp, :catch_changes => true)
     end
+
 
     describe file('/etc/nginx/sites-available/www.puppetlabs.com.conf') do
       it { is_expected.to be_file }
@@ -60,8 +63,11 @@ describe "nginx::resource::vhost define:" do
       file { '/var/www/www.puppetlabs.com/index.html': ensure  => file, content => 'Hello from www\n', }
       "
 
+      # Run it twice and test for idempotency
       apply_manifest(pp, :catch_failures => true)
+      apply_manifest(pp, :catch_changes => true)
     end
+
 
     describe file('/etc/nginx/sites-available/www.puppetlabs.com.conf') do
       it { is_expected.to be_file }

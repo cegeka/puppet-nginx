@@ -20,7 +20,9 @@ describe "nginx::resource::mailhost define:" do
     }
     "
 
+    # Run it twice and test for idempotency
     apply_manifest(pp, :catch_failures => true)
+    apply_manifest(pp, :catch_changes => true)
   end
 
   describe file('/etc/nginx/conf.mail.d/domain1.example.conf') do
