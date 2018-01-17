@@ -25,7 +25,7 @@ class nginx::package(
   anchor { 'nginx::package::end': }
 
   case $::osfamily {
-    'redhat': {
+    'RedHat': {
       class { '::nginx::package::redhat':
         manage_repo    => $manage_repo,
         package_source => $package_source,
@@ -35,7 +35,7 @@ class nginx::package(
         before         => Anchor['nginx::package::end'],
       }
     }
-    'debian': {
+    'Debian': {
       class { '::nginx::package::debian':
         package_name   => $package_name,
         package_source => $package_source,
