@@ -1,6 +1,6 @@
 # Class: nginx::service
 #
-# This module manages NGINX service management and vhost rebuild
+# This module manages NGINX service management and server rebuild
 #
 # Parameters:
 #
@@ -14,51 +14,41 @@
 #
 # This class file is not called directly
 class nginx::service(
-  $configtest_enable = $::nginx::configtest_enable,
-  $service_restart   = $::nginx::service_restart,
-  $service_ensure    = $::nginx::service_ensure,
-  $service_name      = 'nginx',
-  $service_flags     = undef,
+  $service_restart = $nginx::service_restart,
+  $service_ensure  = $nginx::service_ensure,
+  $service_enable  = $nginx::service_enable,
+  $service_name    = $nginx::service_name,
+  $service_flags   = $nginx::service_flags,
+  $service_manage  = $nginx::service_manage,
 ) {
 
-  $service_enable = $service_ensure ? {
-    running => true,
-    absent => false,
-    stopped => false,
-    'undef' => undef,
-    default => true,
-  }
+  assert_private()
 
-  if $service_ensure == 'undef' {
-    $service_ensure_real = undef
-  } else {
-    $service_ensure_real = $service_ensure
-  }
-
-  case $::osfamily {
-    'OpenBSD': {
-      service { 'nginx':
-        ensure     => $service_ensure_real,
-        name       => $service_name,
-        enable     => $service_enable,
-        flags      => $service_flags,
-        hasstatus  => true,
-        hasrestart => true,
+  if $service_manage {
+    case $facts['os']['name'] {
+      'OpenBSD': {
+        service { $service_name:
+          ensure     => $service_ensure,
+          enable     => $service_enable,
+          flags      => $service_flags,
+          hasstatus  => true,
+          hasrestart => true,
+        }
       }
-    }
-    default: {
-      service { 'nginx':
-        ensure     => $service_ensure_real,
-        name       => $service_name,
-        enable     => $service_enable,
-        hasstatus  => true,
-        hasrestart => true,
+      default: {
+        service { $service_name:
+          ensure     => $service_ensure,
+          enable     => $service_enable,
+          hasstatus  => true,
+          hasrestart => true,
+        }
       }
     }
   }
 
-  if $configtest_enable == true {
-    Service['nginx'] {
+  # Allow overriding of 'restart' of Service resource; not used by default
+  if $service_restart {
+    Service[$service_name] {
       restart => $service_restart,
     }
   }

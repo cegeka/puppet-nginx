@@ -10,7 +10,8 @@
 #   [*mappings*]   - Hash of map lookup keys and resultant values
 #   [*hostnames*]  - Indicates that source values can be hostnames with a
 #                    prefix or suffix mask.
-
+#   [*include_files*]   - An array of external files to include
+#
 # Actions:
 #
 # Requires:
@@ -28,6 +29,24 @@
 #    }
 #  }
 #
+# Sample Usage (preserving input of order of mappings):
+#
+#  nginx::resource::map { 'backend_pool':
+#    ...
+#    mappings  => [
+#      { 'key' => '*.sf.example.com', 'value' => 'sf-pool-1' },
+#      { 'key' => '*.nyc.example.com', 'value' => 'ny-pool-1' },
+#    ]
+#  }
+#
+# Sample Usage (using external include)
+#
+# nginx::resource::map { 'redirections':
+#
+#    include_files => [ '/etc/nginx/conf.d/redirections.map']
+#
+# }
+#
 # Sample Hiera usage:
 #
 #  nginx::string_mappings:
@@ -39,25 +58,33 @@
 #      mappings:
 #        '*.nyc.example.com': 'ny-pool-1'
 #        '*.sf.example.com': 'sf-pool-1'
+#
+# Sample Hiera usage (preserving input of order of mappings):
+#
+#  nginx::string_mappings:
+#    client_network:
+#      ...
+#      mappings:
+#        - key: '*.sf.example.com'
+#          value: 'sf-pool-1'
+#        - key: '*.nyc.example.com'
+#          value: 'ny-pool-1'
 
 
 define nginx::resource::map (
-  $string,
-  $mappings,
-  $default    = undef,
-  $ensure     = 'present',
-  $hostnames  = false
+  String[2] $string,
+  Variant[Array, Hash] $mappings,
+  Optional[String] $default         = undef,
+  Enum['absent', 'present'] $ensure = 'present',
+  Array[String] $include_files      = [],
+  Boolean $hostnames                = false
 ) {
-  validate_string($string)
-  validate_re($string, '^.{2,}$',
-    "Invalid string value [${string}]. Expected a minimum of 2 characters.")
-  validate_hash($mappings)
-  validate_bool($hostnames)
-  validate_re($ensure, '^(present|absent)$',
-    "Invalid ensure value '${ensure}'. Expected 'present' or 'absent'")
-  if ($default != undef) { validate_string($default) }
+  if ! defined(Class['nginx']) {
+    fail('You must include the nginx base class before using any defined resources')
+  }
 
-  $root_group = $::nginx::config::root_group
+  $root_group = $nginx::root_group
+  $conf_dir   = "${nginx::conf_dir}/conf.d"
 
   $ensure_real = $ensure ? {
     'absent' => absent,
@@ -70,9 +97,10 @@ define nginx::resource::map (
     mode  => '0644',
   }
 
-  file { "${::nginx::config::conf_dir}/conf.d/${name}-map.conf":
+  file { "${nginx::conf_dir}/conf.d/${name}-map.conf":
     ensure  => $ensure_real,
     content => template('nginx/conf.d/map.erb'),
-    notify  => Class['::nginx::service'],
+    notify  => Class['nginx::service'],
+    require => File[$conf_dir],
   }
 }
