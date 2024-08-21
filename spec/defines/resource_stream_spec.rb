@@ -1,8 +1,10 @@
+# frozen_string_literal: true
+
 require 'spec_helper'
 
 describe 'nginx::resource::streamhost' do
   on_supported_os.each do |os, facts|
-    context "on #{os}" do
+    context "on #{os} with Facter #{facts[:facterversion]} and Puppet #{facts[:puppetversion]}" do
       let(:facts) do
         facts
       end
@@ -18,7 +20,7 @@ describe 'nginx::resource::streamhost' do
 
       let :pre_condition do
         [
-          'include ::nginx'
+          'include nginx'
         ]
       end
 
@@ -27,11 +29,13 @@ describe 'nginx::resource::streamhost' do
           let(:params) { default_params }
 
           it { is_expected.to contain_class('nginx') }
+
           it do
             is_expected.to contain_concat("/etc/nginx/streams-available/#{title}.conf").with('owner' => 'root',
                                                                                              'group' => 'root',
-                                                                                             'mode' => '0644')
+                                                                                             'mode'  => '0644')
           end
+
           it do
             is_expected.to contain_file("#{title}.conf symlink").with('ensure' => 'link',
                                                                       'path'   => "/etc/nginx/streams-enabled/#{title}.conf",
@@ -44,10 +48,11 @@ describe 'nginx::resource::streamhost' do
           let(:params) { default_params }
 
           it { is_expected.to contain_class('nginx') }
+
           it do
             is_expected.to contain_concat("/etc/nginx/conf.stream.d/#{title}.conf").with('owner' => 'root',
                                                                                          'group' => 'root',
-                                                                                         'mode' => '0644')
+                                                                                         'mode'  => '0644')
           end
         end
 
@@ -102,6 +107,12 @@ describe 'nginx::resource::streamhost' do
               match: %r{\s+listen\s+\[::\]:80 spdy;}
             },
             {
+              title: 'should set resolver(s)',
+              attr: 'resolver',
+              value: ['203.0.113.1', '203.0.113.2'],
+              match: %r{\s+resolver\s+203.0.113.1 203.0.113.2;}
+            },
+            {
               title: 'should contain raw_prepend directives',
               attr: 'raw_prepend',
               value: [
@@ -126,6 +137,7 @@ describe 'nginx::resource::streamhost' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-header") }
+
               it param[:title] do
                 matches = Array(param[:match])
 

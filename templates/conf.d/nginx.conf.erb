@@ -16,9 +16,15 @@ worker_processes <%= @worker_processes %>;
 <% if @worker_rlimit_nofile -%>
 worker_rlimit_nofile <%= @worker_rlimit_nofile %>;
 <% end -%>
+<% if @pcre_jit -%>
+pcre_jit <%= @pcre_jit %>;
+<% end -%>
 
 <% if @pid -%>
 pid        <%= @pid %>;
+<% end -%>
+<% if @include_modules_enabled -%>
+include /etc/nginx/modules-enabled/*.conf;
 <% end -%>
 <% if @nginx_cfg_prepend -%>
 
@@ -37,10 +43,13 @@ events {
   <%- end -%>
   worker_connections <%= @worker_connections -%>;
   <%- if @multi_accept == 'on' -%>
-    multi_accept on;
+  multi_accept on;
   <%- end -%>
   <%- if @events_use -%>
-    use <%= @events_use %>;
+  use <%= @events_use %>;
+  <%- end -%>
+  <%- @debug_connections.each do |address| -%>
+  debug_connection <%= address %>;
   <%- end -%>
 }
 
@@ -65,7 +74,11 @@ http {
   default_type  application/octet-stream;
 <% if @log_format -%>
 <% @log_format.sort_by{|k,v| k}.each do |key,value| -%>
-  log_format <%= key %> '<%= value %>';
+  <%- if value.is_a?(Hash) -%>
+  log_format <%= key %> <%= "escape=#{value['escape']} " if value['escape'] %><%= value['format'].inspect %>;
+  <%- else -%>
+  log_format <%= key %> <%= value.inspect %>;
+  <%- end -%>
 <% end -%>
 <% end -%>
 
@@ -87,6 +100,16 @@ http {
   error_log <%= @nginx_error_log %> <%= @nginx_error_log_severity %>;
 <% end -%>
 
+<% if @limit_req_zone -%>
+<% if @limit_req_zone.is_a?(Array) -%>
+<%- @limit_req_zone.each do |limit_req_zone_item| -%>
+  limit_req_zone <%= limit_req_zone_item %>;
+<% end -%>
+<% else -%>
+  limit_req_zone <%= @limit_req_zone %>;
+<% end -%>
+<% end -%>
+
 <% if @sendfile == 'on' -%>
   sendfile on;
   <%- if @http_tcp_nopush == 'on' -%>
@@ -101,16 +124,35 @@ http {
   server_names_hash_bucket_size <%= @names_hash_bucket_size %>;
   server_names_hash_max_size <%= @names_hash_max_size %>;
 
+<% if @map_hash_bucket_size -%>
+  map_hash_bucket_size <%= @map_hash_bucket_size %>;
+<% end -%>
+<% if @map_hash_max_size -%>
+  map_hash_max_size <%= @map_hash_max_size %>;
+<% end -%>
+
   keepalive_timeout   <%= @keepalive_timeout %>;
   keepalive_requests  <%= @keepalive_requests %>;
   client_body_timeout <%= @client_body_timeout %>;
   send_timeout        <%= @send_timeout %>;
+<% if @lingering_close -%>
+  lingering_close      <%= @lingering_close %>;
+<% end -%>
+<% if @lingering_time -%>
+  lingering_time      <%= @lingering_time %>;
+<% end -%>
   lingering_timeout   <%= @lingering_timeout %>;
   tcp_nodelay         <%= @http_tcp_nodelay %>;
+<% if @reset_timedout_connection -%>
+  reset_timedout_connection <%= @reset_timedout_connection %>;
+<% end -%>
 
 <% if @etag -%>
   etag <%= @etag %>;
 
+<% end -%>
+<% if @gzip_static -%>
+   gzip_static       <%= @gzip_static %>;
 <% end -%>
 <% if @gzip == 'on' -%>
   gzip              on;
@@ -124,7 +166,7 @@ http {
   gzip_min_length   <%= @gzip_min_length %>;
   gzip_http_version <%= @gzip_http_version %>;
 <% if @gzip_proxied -%>
-  gzip_proxied      <%= @gzip_proxied %>;
+  gzip_proxied      <%= Array(@gzip_proxied).uniq.join(' ') %>;
 <% end -%>
 <% if @gzip_types -%>
   gzip_types        <%= @gzip_types.kind_of?(Array) ? @gzip_types.join(' ') : @gzip_types %>;
@@ -132,8 +174,8 @@ http {
   gzip_vary         <%= @gzip_vary %>;
 <% end -%>
 
-<% if @client_body_temp_path -%>
-  client_body_temp_path   <%= @client_body_temp_path %>;
+<% if @_client_body_temp_path -%>
+  client_body_temp_path   <%= @_client_body_temp_path.join(' ') %>;
 <% end -%>
 <% if @client_max_body_size -%>
   client_max_body_size    <%= @client_max_body_size %>;
@@ -144,8 +186,8 @@ http {
 <% if @proxy_redirect -%>
   proxy_redirect          <%= @proxy_redirect %>;
 <% end -%>
-<% if @proxy_temp_path -%>
-  proxy_temp_path         <%= @proxy_temp_path %>;
+<% if @_proxy_temp_path -%>
+  proxy_temp_path         <%= @_proxy_temp_path.join(' ') %>;
 <% end -%>
 <% if @proxy_connect_timeout -%>
   proxy_connect_timeout   <%= @proxy_connect_timeout %>;
@@ -185,7 +227,7 @@ http {
 <% end -%>
 <% if @proxy_cache_path.is_a?(Hash) -%>
 <% @proxy_cache_path.sort_by{|k,v| k}.each do |key,value| -%>
-  proxy_cache_path        <%= key %> keys_zone=<%= value %> levels=<%= @proxy_cache_levels %> max_size=<%= @proxy_cache_max_size %> inactive=<%= @proxy_cache_inactive -%>
+  proxy_cache_path        <%= key %> levels=<%= @proxy_cache_levels %> keys_zone=<%= value %> max_size=<%= @proxy_cache_max_size %> inactive=<%= @proxy_cache_inactive -%>
    <%- if @proxy_use_temp_path %> use_temp_path=<%= @proxy_use_temp_path %><% end -%>
    <%- if @proxy_cache_loader_files %> loader_files=<%= @proxy_cache_loader_files %><% end -%>
    <%- if @proxy_cache_loader_sleep %> loader_sleep=<%= @proxy_cache_loader_sleep %><% end -%>
@@ -206,6 +248,61 @@ http {
 <% end -%>
 <% if @fastcgi_cache_use_stale -%>
   fastcgi_cache_use_stale <%= @fastcgi_cache_use_stale %>;
+<% end -%>
+
+<% if @ssl_dhparam -%>
+  ssl_dhparam               <%= @ssl_dhparam %>;
+<% end -%>
+<% if @ssl_ecdh_curve -%>
+  ssl_ecdh_curve            <%= @ssl_ecdh_curve %>;
+<% end -%>
+<% if @ssl_session_cache -%>
+  ssl_session_cache         <%= @ssl_session_cache %>;
+<% end -%>
+<% if @ssl_session_timeout -%>
+  ssl_session_timeout       <%= @ssl_session_timeout %>;
+<% end -%>
+<% if @ssl_session_tickets -%>
+  ssl_session_tickets       <%= @ssl_session_tickets %>;
+<% end -%>
+<% if @ssl_session_ticket_key -%>
+  ssl_session_ticket_key    <%= @ssl_session_ticket_key %>;
+<% end -%>
+<% if @ssl_buffer_size -%>
+  ssl_buffer_size           <%= @ssl_buffer_size %>;
+<% end -%>
+<% if @ssl_protocols -%>
+  ssl_protocols             <%= @ssl_protocols %>;
+<% end -%>
+<% if @ssl_ciphers -%>
+  ssl_ciphers               <%= @ssl_ciphers %>;
+<% end -%>
+<% if @ssl_prefer_server_ciphers -%>
+  ssl_prefer_server_ciphers <%= @ssl_prefer_server_ciphers %>;
+<% end -%>
+<% if @ssl_crl -%>
+  ssl_crl                   <%= @ssl_crl %>;
+<% end -%>
+<% if @ssl_stapling -%>
+  ssl_stapling              <%= @ssl_stapling %>;
+<% end -%>
+<% if @ssl_stapling_file -%>
+  ssl_stapling_file         <%= @ssl_stapling_file %>;
+<% end -%>
+<% if @ssl_stapling_responder -%>
+  ssl_stapling_responder    <%= @ssl_stapling_responder %>;
+<% end -%>
+<% if @ssl_stapling_verify -%>
+  ssl_stapling_verify       <%= @ssl_stapling_verify %>;
+<% end -%>
+<% if @ssl_trusted_certificate -%>
+  ssl_trusted_certificate   <%= @ssl_trusted_certificate %>;
+<% end -%>
+<% if @ssl_verify_depth -%>
+  ssl_verify_depth          <%= @ssl_verify_depth %>;
+<% end -%>
+<% if @ssl_password_file -%>
+  ssl_password_file         <%= @ssl_password_file %>;
 <% end -%>
 <% if @http_cfg_append -%>
 
@@ -239,6 +336,16 @@ stream {
   include <%= @conf_dir %>/conf.stream.d/*.conf;
 <% unless @confd_only -%>
   include <%= @conf_dir %>/streams-enabled/*;
+<% end -%>
+<% unless @stream_log_format.empty? -%>
+
+<% @stream_log_format.sort.each do |key,value| -%>
+  log_format <%= key %> '<%= value %>';
+<% end -%>
+<% end -%>
+
+<%- Array(@stream_access_log).each do |log_item| -%>
+  access_log <%= log_item %><% if @stream_custom_format_log %> <%= @stream_custom_format_log%><% end %>;
 <% end -%>
 }
 <% end -%>

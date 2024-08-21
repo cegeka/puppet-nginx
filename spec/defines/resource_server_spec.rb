@@ -1,8 +1,10 @@
+# frozen_string_literal: true
+
 require 'spec_helper'
 
 describe 'nginx::resource::server' do
   on_supported_os.each do |os, facts|
-    context "on #{os}" do
+    context "on #{os} with Facter #{facts[:facterversion]} and Puppet #{facts[:puppetversion]}" do
       let(:facts) do
         facts
       end
@@ -21,7 +23,7 @@ describe 'nginx::resource::server' do
 
       let :pre_condition do
         [
-          'include ::nginx'
+          'include nginx'
         ]
       end
 
@@ -30,19 +32,22 @@ describe 'nginx::resource::server' do
           let(:params) { default_params }
 
           it { is_expected.to contain_class('nginx') }
+
           it do
             is_expected.to contain_concat("/etc/nginx/sites-available/#{title}.conf").with('owner' => 'root',
                                                                                            'group' => 'root',
                                                                                            'mode' => '0644')
           end
-          it { is_expected.to contain_concat__fragment("#{title}-header").with_content(%r{access_log\s+/var/log/nginx/www\.rspec\.example\.com\.access\.log combined;}) }
+
+          it { is_expected.to contain_concat__fragment("#{title}-header").with_content(%r{access_log\s+/var/log/nginx/www\.rspec\.example\.com\.access\.log;}) }
           it { is_expected.to contain_concat__fragment("#{title}-header").with_content(%r{error_log\s+/var/log/nginx/www\.rspec\.example\.com\.error\.log}) }
           it { is_expected.to contain_concat__fragment("#{title}-footer") }
           it { is_expected.to contain_nginx__resource__location("#{title}-default") }
           it { is_expected.not_to contain_file('/etc/nginx/fastcgi.conf') }
+
           it do
             is_expected.to contain_file("#{title}.conf symlink").with('ensure' => 'link',
-                                                                      'path'   => "/etc/nginx/sites-enabled/#{title}.conf",
+                                                                      'path' => "/etc/nginx/sites-enabled/#{title}.conf",
                                                                       'target' => "/etc/nginx/sites-available/#{title}.conf")
           end
         end
@@ -52,6 +57,7 @@ describe 'nginx::resource::server' do
           let(:params) { default_params }
 
           it { is_expected.to contain_class('nginx') }
+
           it do
             is_expected.to contain_concat("/etc/nginx/conf.d/#{title}.conf").with('owner' => 'root',
                                                                                   'group' => 'root',
@@ -75,6 +81,14 @@ describe 'nginx::resource::server' do
 
         describe 'server_header template content' do
           [
+            {
+              title: 'should contain access and error logs directives inside the www rewrite',
+              attr: 'rewrite_www_to_non_www',
+              value: true,
+              match: %r{\s+return\s+301\s+http://rspec\.example\.com\$request_uri;\n
+              \s+access_log\s+/var/log/nginx/www.rspec.example.com.access.log;\n
+              \s+error_log\s+/var/log/nginx/www.rspec.example.com.error.log;\n}x
+            },
             {
               title: 'should not contain www to non-www rewrite',
               attr: 'rewrite_www_to_non_www',
@@ -234,6 +248,18 @@ describe 'nginx::resource::server' do
               match: %r{^\s+gzip_types\s+value;}
             },
             {
+              title: 'should not set the gzip_static',
+              attr: 'gzip_static',
+              value: :undef,
+              notmatch: 'gzip_static'
+            },
+            {
+              title: 'should set the gzip_static',
+              attr: 'gzip_static',
+              value: 'on',
+              match: %r{^\s+gzip_static\s+on;}
+            },
+            {
               title: 'should contain raw_prepend directives',
               attr: 'raw_prepend',
               value: [
@@ -282,15 +308,15 @@ describe 'nginx::resource::server' do
               title: 'should set access_log',
               attr: 'access_log',
               value: '/path/to/access.log',
-              match: '  access_log            /path/to/access.log combined;'
+              match: '  access_log            /path/to/access.log;'
             },
             {
               title: 'should set multiple access_log directives',
               attr: 'access_log',
               value: ['/path/to/log/1', 'syslog:server=localhost'],
               match: [
-                '  access_log            /path/to/log/1 combined;',
-                '  access_log            syslog:server=localhost combined;'
+                '  access_log            /path/to/log/1;',
+                '  access_log            syslog:server=localhost;'
               ]
             },
             {
@@ -303,7 +329,7 @@ describe 'nginx::resource::server' do
               title: 'should set access_log to syslog',
               attr: 'access_log',
               value: 'syslog:server=localhost',
-              match: '  access_log            syslog:server=localhost combined;'
+              match: '  access_log            syslog:server=localhost;'
             },
             {
               title: 'should set format_log custom_format',
@@ -331,6 +357,18 @@ describe 'nginx::resource::server' do
                 '  error_log             /path/to/error.log;',
                 '  error_log             syslog:server=localhost;'
               ]
+            },
+            {
+              title: 'should set error_log severity level',
+              attr: 'error_log_severity',
+              value: 'warn',
+              match: '  error_log             /var/log/nginx/www.rspec.example.com.error.log warn;'
+            },
+            {
+              title: 'should not set error_log severity level',
+              attr: 'error_log_severity',
+              value: :undef,
+              match: '  error_log             /var/log/nginx/www.rspec.example.com.error.log;'
             },
             {
               title: 'should not include error_log in server when set to absent',
@@ -361,12 +399,25 @@ describe 'nginx::resource::server' do
               attr: 'autoindex',
               value: 'on',
               match: '  autoindex on;'
+            },
+            {
+              title: 'should set autoindex_exact_size',
+              attr: 'autoindex_exact_size',
+              value: 'on',
+              match: '  autoindex_exact_size on;'
+            },
+            {
+              title: 'should set reset_timedout_connection',
+              attr: 'reset_timedout_connection',
+              value: 'on',
+              match: %r{^\s+reset_timedout_connection\s+on;}
             }
           ].each do |param|
             context "when #{param[:attr]} is #{param[:value]}" do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-header") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -383,10 +434,18 @@ describe 'nginx::resource::server' do
             end
           end
 
-          context 'with a naked domain title' do
+          context 'with a naked domain title over http' do
             let(:title) { 'rspec.example.com' }
 
             [
+              {
+                title: 'should contain access and error logs directives inside the non-www rewrite',
+                attr: 'rewrite_non_www_to_www',
+                value: true,
+                match: %r{\s+return\s+301\s+http://www.rspec\.example\.com\$request_uri;\n
+                \s+access_log\s+/var/log/nginx/rspec.example.com.access.log;\n
+                \s+error_log\s+/var/log/nginx/rspec.example.com.error.log;\n}x
+              },
               {
                 title: 'should not contain non-www to www rewrite',
                 attr: 'rewrite_non_www_to_www',
@@ -424,6 +483,7 @@ describe 'nginx::resource::server' do
                 let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
                 it { is_expected.to contain_concat__fragment("#{title}-header") }
+
                 it param[:title] do
                   matches = Array(param[:match])
 
@@ -435,6 +495,73 @@ describe 'nginx::resource::server' do
                   end
                   Array(param[:notmatch]).each do |item|
                     is_expected.to contain_concat__fragment("#{title}-header").without_content(item)
+                  end
+                end
+              end
+            end
+          end
+
+          context 'with a naked domain title over https' do
+            let(:title) { 'rspec.example.com' }
+
+            [
+              {
+                title: 'should contain access and error logs directives inside the non-www rewrite',
+                attr: 'rewrite_non_www_to_www',
+                value: true,
+                match: %r{\s+return\s+301\s+https://www.rspec\.example\.com\$request_uri;\n
+                \s+access_log\s+/var/log/nginx/ssl-rspec.example.com.access.log;\n
+                \s+error_log\s+/var/log/nginx/ssl-rspec.example.com.error.log;\n}x
+              },
+              {
+                title: 'should not contain non-www to www rewrite',
+                attr: 'rewrite_non_www_to_www',
+                value: false,
+                notmatch: %r{
+                ^
+                \s+server_name\s+rspec\.example\.com;\n
+                \s+return\s+301\s+https://www\.rspec\.example\.com\$request_uri;
+                }x
+              },
+              {
+                title: 'should contain non-www to www rewrite',
+                attr: 'rewrite_non_www_to_www',
+                value: true,
+                match: %r{
+                ^
+                \s+server_name\s+rspec\.example\.com;\n
+                \s+return\s+301\s+https://www\.rspec\.example\.com\$request_uri;
+                }x
+              },
+              {
+                title: 'should rewrite non-www servername to www',
+                attr: 'rewrite_non_www_to_www',
+                value: true,
+                match: %r{\s+server_name\s+www.rspec.example.com;}
+              },
+              {
+                title: 'should not rewrite non-www servername to www',
+                attr: 'rewrite_non_www_to_www',
+                value: false,
+                notmatch: %r{\s+server_name\s+www.rspec.example.com;}
+              }
+            ].each do |param|
+              context "when #{param[:attr]} is #{param[:value]}" do
+                let(:params) { default_params.merge(param[:attr].to_sym => param[:value], ssl: true, ssl_cert: '/tmp/dummy.crt', ssl_key: '/tmp/dummy.key', listen_port: 443) }
+
+                it { is_expected.to contain_concat__fragment("#{title}-ssl-header") }
+
+                it param[:title] do
+                  matches = Array(param[:match])
+
+                  if matches.all? { |m| m.is_a? Regexp }
+                    matches.each { |item| is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(item) }
+                  else
+                    lines = catalogue.resource('concat::fragment', "#{title}-ssl-header").send(:parameters)[:content].split("\n")
+                    expect(lines & Array(param[:match])).to eq(Array(param[:match]))
+                  end
+                  Array(param[:notmatch]).each do |item|
+                    is_expected.to contain_concat__fragment("#{title}-ssl-header").without_content(item)
                   end
                 end
               end
@@ -489,6 +616,7 @@ describe 'nginx::resource::server' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-footer") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -523,6 +651,7 @@ describe 'nginx::resource::server' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-footer") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -555,8 +684,9 @@ describe 'nginx::resource::server' do
                 facts[:nginx_version] ? facts.delete(:nginx_version) : facts
               end
 
-              it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{  ssl on;}) }
+              it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{listen       \*:443 ssl;}) }
             end
+
             context 'with fact nginx_version=1.14.1' do
               let(:facts) { facts.merge(nginx_version: '1.14.1') }
 
@@ -567,6 +697,26 @@ describe 'nginx::resource::server' do
               let(:facts) { facts.merge(nginx_version: '1.15.1') }
 
               it { is_expected.to contain_concat__fragment("#{title}-ssl-header").without_content(%r{  ssl on;}) }
+            end
+
+            context 'http2 on with fact nginx_version=1.25.1' do
+              let(:facts) { facts.merge(nginx_version: '1.25.1') }
+              let :params do
+                default_params.merge(
+                  http2: 'on',
+                  ssl: true,
+                  ssl_key: '/tmp/dummy.key',
+                  ssl_cert: '/tmp/dummy.crt'
+                )
+              end
+
+              it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{^\s+http2\s+on;}) }
+            end
+
+            context 'with fact nginx_version=1.25.1' do
+              let(:facts) { facts.merge(nginx_version: '1.25.1') }
+
+              it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{^\s+http2\s+off;}) }
             end
 
             context 'with ssl cert and key definitions' do
@@ -829,15 +979,15 @@ describe 'nginx::resource::server' do
               title: 'should set access_log',
               attr: 'access_log',
               value: '/path/to/access.log',
-              match: '  access_log            /path/to/access.log combined;'
+              match: '  access_log            /path/to/access.log;'
             },
             {
               title: 'should set multiple access_log directives',
               attr: 'access_log',
               value: ['/path/to/log/1', 'syslog:server=localhost'],
               match: [
-                '  access_log            /path/to/log/1 combined;',
-                '  access_log            syslog:server=localhost combined;'
+                '  access_log            /path/to/log/1;',
+                '  access_log            syslog:server=localhost;'
               ]
             },
             {
@@ -856,7 +1006,7 @@ describe 'nginx::resource::server' do
               title: 'should set access_log to syslog',
               attr: 'access_log',
               value: 'syslog:server=localhost',
-              match: '  access_log            syslog:server=localhost combined;'
+              match: '  access_log            syslog:server=localhost;'
             },
             {
               title: 'should set format_log custom_format',
@@ -878,6 +1028,18 @@ describe 'nginx::resource::server' do
                 '  error_log             /path/to/error.log;',
                 '  error_log             syslog:server=localhost;'
               ]
+            },
+            {
+              title: 'should set error_log severity level',
+              attr: 'error_log_severity',
+              value: 'warn',
+              match: '  error_log             /var/log/nginx/ssl-www.rspec.example.com.error.log warn;'
+            },
+            {
+              title: 'should not set error_log severity level',
+              attr: 'error_log_severity',
+              value: :undef,
+              match: '  error_log             /var/log/nginx/ssl-www.rspec.example.com.error.log;'
             },
             {
               title: 'should not include error_log in server when set to absent',
@@ -952,17 +1114,24 @@ describe 'nginx::resource::server' do
               attr: 'autoindex',
               value: 'on',
               match: '  autoindex on;'
+            },
+            {
+              title: 'should set autoindex_exact_size',
+              attr: 'autoindex_exact_size',
+              value: 'on',
+              match: '  autoindex_exact_size on;'
             }
           ].each do |param|
             context "when #{param[:attr]} is #{param[:value]}" do
               let :params do
                 default_params.merge(param[:attr].to_sym => param[:value],
-                                     :ssl                => true,
-                                     :ssl_key            => 'dummy.key',
-                                     :ssl_cert           => 'dummy.crt')
+                                     :ssl => true,
+                                     :ssl_key => 'dummy.key',
+                                     :ssl_cert => 'dummy.crt')
               end
 
               it { is_expected.to contain_concat__fragment("#{title}-ssl-header") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -1036,12 +1205,13 @@ describe 'nginx::resource::server' do
             context "when #{param[:attr]} is #{param[:value]}" do
               let :params do
                 default_params.merge(param[:attr].to_sym => param[:value],
-                                     :ssl                => true,
-                                     :ssl_key            => 'dummy.key',
-                                     :ssl_cert           => 'dummy.crt')
+                                     :ssl => true,
+                                     :ssl_key => 'dummy.key',
+                                     :ssl_cert => 'dummy.crt')
               end
 
               it { is_expected.to contain_concat__fragment("#{title}-ssl-footer") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -1097,7 +1267,7 @@ describe 'nginx::resource::server' do
             let(:params) { { ssl_redirect: true } }
 
             it { is_expected.to contain_concat__fragment("#{title}-header").without_content(%r{^\s*index\s+}) }
-            it { is_expected.to contain_concat__fragment("#{title}-header").without_content(%r{^\s*location\s+}) }
+            it { is_expected.to contain_concat__fragment("#{title}-header").with_content(%r{    return 301 https://\$host\$request_uri;}) }
           end
 
           context 'ssl_redirect with alternate port' do
@@ -1166,6 +1336,21 @@ describe 'nginx::resource::server' do
 
             it { is_expected.to contain_concat__fragment("#{title}-ssl-header").without_content(%r{ssl_certificate}) }
             it { is_expected.to contain_concat__fragment("#{title}-ssl-header").without_content(%r{ssl_certificate_key}) }
+          end
+
+          context 'SSL cert and key are both an array' do
+            let(:params) do
+              {
+                ssl: true,
+                ssl_cert: ['/tmp/foo1.crt', '/tmp/foo2.crt'],
+                ssl_key: ['/tmp/foo1.key', '/tmp/foo2.key'],
+              }
+            end
+
+            it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{ssl_certificate\s+/tmp/foo1.crt}) }
+            it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{ssl_certificate_key\s+/tmp/foo1.key}) }
+            it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{ssl_certificate\s+/tmp/foo2.crt}) }
+            it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{ssl_certificate_key\s+/tmp/foo2.key}) }
           end
 
           context 'when use_default_location => true' do
@@ -1323,7 +1508,7 @@ describe 'nginx::resource::server' do
             end
 
             it { is_expected.to contain_nginx__resource__location("#{title}-default").with_ssl_only(true) }
-            it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{access_log\s+/var/log/nginx/ssl-www\.rspec\.example\.com\.access\.log combined;}) }
+            it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{access_log\s+/var/log/nginx/ssl-www\.rspec\.example\.com\.access\.log;}) }
             it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{error_log\s+/var/log/nginx/ssl-www\.rspec\.example\.com\.error\.log}) }
             it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{ssl_certificate\s+dummy.cert;}) }
             it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{ssl_certificate_key\s+dummy.key;}) }
@@ -1342,10 +1527,11 @@ describe 'nginx::resource::server' do
             end
 
             it { is_expected.to contain_nginx__resource__location("#{title}-default").with_ssl_only(true) }
-            it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{access_log\s+/var/log/nginx/ssl-www\.rspec\.example\.com\.access\.log combined;}) }
+            it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{access_log\s+/var/log/nginx/ssl-www\.rspec\.example\.com\.access\.log;}) }
             it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{error_log\s+/var/log/nginx/ssl-www\.rspec\.example\.com\.error\.log}) }
             it { is_expected.to contain_concat__fragment("#{title}-ssl-header").with_content(%r{ssl_verify_client\s+optional;}) }
           end
+
           context 'when passenger_cgi_param is set' do
             let :params do
               default_params.merge(passenger_cgi_param: { 'test1' => 'test value 1', 'test2' => 'test value 2', 'test3' => 'test value 3' })

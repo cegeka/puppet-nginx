@@ -1,10 +1,13 @@
+# frozen_string_literal: true
+
 require 'spec_helper'
 
 describe 'nginx::resource::mailhost' do
   on_supported_os.each do |os, facts|
-    context "on #{os}" do
+    context "on #{os} with Facter #{facts[:facterversion]} and Puppet #{facts[:puppetversion]}" do
       let(:facts) do
-        facts
+        # Explicitly define the IPv6 address facts
+        override_facts(facts, networking: { ip6: '2001:db8::c0:ffee' })
       end
       let(:title) { 'www.rspec.example.com' }
       let :default_params do
@@ -13,7 +16,7 @@ describe 'nginx::resource::mailhost' do
           ipv6_enable: true
         }
       end
-      let(:pre_condition) { ['include ::nginx'] }
+      let(:pre_condition) { ['include nginx'] }
 
       describe 'os-independent items' do
         describe 'basic assumptions' do
@@ -21,13 +24,22 @@ describe 'nginx::resource::mailhost' do
 
           it { is_expected.to contain_class('nginx') }
           it { is_expected.to contain_concat("/etc/nginx/conf.mail.d/#{title}.conf").that_requires('File[/etc/nginx/conf.mail.d]') }
+
           it do
             is_expected.to contain_concat("/etc/nginx/conf.mail.d/#{title}.conf").with('owner' => 'root',
                                                                                        'group' => 'root',
-                                                                                       'mode' => '0644')
+                                                                                       'mode'  => '0644')
           end
+
           it { is_expected.to contain_concat__fragment("#{title}-header") }
           it { is_expected.not_to contain_concat__fragment("#{title}-ssl") }
+        end
+
+        describe 'absent assumption' do
+          let(:params) { default_params.merge(ensure: 'absent') }
+
+          it { is_expected.to contain_class('nginx') }
+          it { is_expected.to contain_concat("/etc/nginx/conf.mail.d/#{title}.conf").with('ensure' => 'absent') }
         end
 
         describe 'mailhost template content' do
@@ -54,19 +66,19 @@ describe 'nginx::resource::mailhost' do
               title: 'should enable IPv6',
               attr: 'ipv6_enable',
               value: true,
-              match: '  listen                [::]:80 default ipv6only=on;'
+              match: '  listen                [::]:25 default ipv6only=on;'
             },
             {
               title: 'should not enable IPv6',
               attr: 'ipv6_enable',
               value: false,
-              notmatch: %r{  listen                \[::\]:80 default ipv6only=on;}
+              notmatch: %r{  listen                \[::\]:25 default ipv6only=on;}
             },
             {
               title: 'should set the IPv6 listen IP',
               attr: 'ipv6_listen_ip',
               value: '2001:0db8:85a3:0000:0000:8a2e:0370:7334',
-              match: '  listen                [2001:0db8:85a3:0000:0000:8a2e:0370:7334]:80 default ipv6only=on;'
+              match: '  listen                [2001:0db8:85a3:0000:0000:8a2e:0370:7334]:25 default ipv6only=on;'
             },
             {
               title: 'should set the IPv6 listen port',
@@ -78,7 +90,7 @@ describe 'nginx::resource::mailhost' do
               title: 'should set the IPv6 listen options',
               attr: 'ipv6_listen_options',
               value: 'spdy',
-              match: '  listen                [::]:80 spdy;'
+              match: '  listen                [::]:25 spdy;'
             },
             {
               title: 'should set servername(s)',
@@ -89,14 +101,14 @@ describe 'nginx::resource::mailhost' do
             {
               title: 'should set protocol',
               attr: 'protocol',
-              value: 'test-protocol',
-              match: '  protocol              test-protocol;'
+              value: 'imap',
+              match: '  protocol              imap;'
             },
             {
               title: 'should set xclient',
               attr: 'xclient',
-              value: 'test-xclient',
-              match: '  xclient               test-xclient;'
+              value: 'off',
+              match: '  xclient               off;'
             },
             {
               title: 'should set auth_http',
@@ -129,7 +141,19 @@ describe 'nginx::resource::mailhost' do
               notmatch: %r{  ssl_session_timeout  5m;}
             },
             {
-              title: 'should contain raw_prepend directives',
+              title: 'should contain raw_prepend directives (String)',
+              attr: 'raw_prepend',
+              value: 'test value;',
+              match: ['  test value;']
+            },
+            {
+              title: 'should contain raw_append directives (String)',
+              attr: 'raw_append',
+              value: 'test value;',
+              match: ['  test value;']
+            },
+            {
+              title: 'should contain raw_prepend directives (Array)',
               attr: 'raw_prepend',
               value: [
                 'if (a) {',
@@ -139,7 +163,7 @@ describe 'nginx::resource::mailhost' do
               match: %r{^\s+if \(a\) \{\n\s++b;\n\s+\}}
             },
             {
-              title: 'should contain raw_append directives',
+              title: 'should contain raw_append directives (Array)',
               attr: 'raw_append',
               value: [
                 'if (a) {',
@@ -151,23 +175,45 @@ describe 'nginx::resource::mailhost' do
             {
               title: 'should contain ordered prepended directives',
               attr: 'mailhost_cfg_prepend',
-              value: { 'test1' => 'test value 1', 'test2' => ['test value 2a', 'test value 2b'], 'test3' => 'test value 3' },
+              value: {
+                'test1' => 'test value 1',
+                'test2' => ['test value 2a', 'test value 2b'],
+                'test3' => {
+                  'subkey 3a' => 'subvalue 3a',
+                  'subkey 3b' => ['subvalue 3b1', 'subvalue 3b2'],
+                },
+                'test4' => 'test value 4',
+              },
               match: [
                 '  test1 test value 1;',
                 '  test2 test value 2a;',
                 '  test2 test value 2b;',
-                '  test3 test value 3;'
+                '  test3 subkey 3a subvalue 3a;',
+                '  test3 subkey 3b subvalue 3b1;',
+                '  test3 subkey 3b subvalue 3b2;',
+                '  test4 test value 4;',
               ]
             },
             {
               title: 'should contain ordered appended directives',
               attr: 'mailhost_cfg_append',
-              value: { 'test1' => 'test value 1', 'test2' => ['test value 2a', 'test value 2b'], 'test3' => 'test value 3' },
+              value: {
+                'test1' => 'test value 1',
+                'test2' => ['test value 2a', 'test value 2b'],
+                'test3' => {
+                  'subkey 3a' => 'subvalue 3a',
+                  'subkey 3b' => ['subvalue 3b1', 'subvalue 3b2'],
+                },
+                'test4' => 'test value 4',
+              },
               match: [
                 '  test1 test value 1;',
                 '  test2 test value 2a;',
                 '  test2 test value 2b;',
-                '  test3 test value 3;'
+                '  test3 subkey 3a subvalue 3a;',
+                '  test3 subkey 3b subvalue 3b1;',
+                '  test3 subkey 3b subvalue 3b2;',
+                '  test4 test value 4;',
               ]
             }
           ].each do |param|
@@ -183,6 +229,7 @@ describe 'nginx::resource::mailhost' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-header") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -193,6 +240,23 @@ describe 'nginx::resource::mailhost' do
                   expect(lines & Array(param[:match])).to eq(Array(param[:match]))
                 end
               end
+            end
+          end
+          context 'mail proxy parameters' do
+            let(:pre_condition) { ['class { "nginx": nginx_version => "1.20.0"}'] }
+            let(:params) do
+              {
+                listen_port: 25,
+                ipv6_enable: true,
+                ssl_cert: 'dummy.crt',
+                ssl_key: 'dummy.key'
+              }
+            end
+
+            it 'configures mail proxy settings' do
+              content = catalogue.resource('concat::fragment', "#{title}-header").send(:parameters)[:content]
+              expect(content).to include('proxy_protocol        off;')
+              expect(content).to include('proxy_smtp_auth       off;')
             end
           end
         end
@@ -230,6 +294,7 @@ describe 'nginx::resource::mailhost' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-header") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -270,6 +335,7 @@ describe 'nginx::resource::mailhost' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-header") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -310,6 +376,7 @@ describe 'nginx::resource::mailhost' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-header") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -465,6 +532,7 @@ describe 'nginx::resource::mailhost' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-header") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -485,7 +553,7 @@ describe 'nginx::resource::mailhost' do
               title: 'should set the IPv4 SSL listen port',
               attr: 'ssl_port',
               value: 45,
-              match: '  listen                *:45;'
+              match: '  listen                *:45 ssl;'
             },
             {
               title: 'should enable IPv6',
@@ -526,14 +594,14 @@ describe 'nginx::resource::mailhost' do
             {
               title: 'should set protocol',
               attr: 'protocol',
-              value: 'test-protocol',
-              match: '  protocol              test-protocol;'
+              value: 'imap',
+              match: '  protocol              imap;'
             },
             {
               title: 'should set xclient',
               attr: 'xclient',
-              value: 'test-xclient',
-              match: '  xclient               test-xclient;'
+              value: 'off',
+              match: '  xclient               off;'
             },
             {
               title: 'should set auth_http',
@@ -588,6 +656,7 @@ describe 'nginx::resource::mailhost' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_concat__fragment("#{title}-ssl") }
+
               it param[:title] do
                 matches = Array(param[:match])
 
@@ -600,6 +669,7 @@ describe 'nginx::resource::mailhost' do
               end
             end
           end
+
           context 'on nginx 1.16' do
             let(:params) do
               {
@@ -619,19 +689,30 @@ describe 'nginx::resource::mailhost' do
                 facts.merge(nginx_version: '1.16.0')
               end
 
-              let(:pre_condition) { ['include ::nginx'] }
+              let(:pre_condition) { ['include nginx'] }
 
               it 'has `ssl` at end of listen directive' do
                 content = catalogue.resource('concat::fragment', "#{title}-ssl").send(:parameters)[:content]
                 expect(content).to include('listen                *:587 ssl;')
               end
             end
+
             context 'when version comes from parameter' do
               let(:pre_condition) { ['class { "nginx": nginx_version => "1.16.0"}'] }
 
               it 'also has `ssl` at end of listen directive' do
                 content = catalogue.resource('concat::fragment', "#{title}-ssl").send(:parameters)[:content]
                 expect(content).to include('listen                *:587 ssl;')
+              end
+            end
+
+            context 'mail proxy parameters' do
+              let(:pre_condition) { ['class { "nginx": nginx_version => "1.20.0"}'] }
+
+              it 'configures mail proxy settings' do
+                content = catalogue.resource('concat::fragment', "#{title}-ssl").send(:parameters)[:content]
+                expect(content).to include('proxy_protocol        off;')
+                expect(content).to include('proxy_smtp_auth       off;')
               end
             end
           end
@@ -702,25 +783,7 @@ describe 'nginx::resource::mailhost' do
             it { is_expected.to contain_concat__fragment("#{title}-header") }
           end
 
-          context 'when listen_port != "ssl_port"' do
-            let :params do
-              default_params.merge(listen_port: 80,
-                                   ssl_port: 443)
-            end
-
-            it { is_expected.to contain_concat__fragment("#{title}-header") }
-          end
-
           context 'when listen_port == ssl_port' do
-            let :params do
-              default_params.merge(listen_port: 80,
-                                   ssl_port: 80)
-            end
-
-            it { is_expected.not_to contain_concat__fragment("#{title}-header") }
-          end
-
-          context 'when listen_port == "ssl_port"' do
             let :params do
               default_params.merge(listen_port: 80,
                                    ssl_port: 80)
@@ -749,6 +812,35 @@ describe 'nginx::resource::mailhost' do
 
             it { is_expected.to contain_concat__fragment("#{title}-header") }
             it { is_expected.not_to contain_concat__fragment("#{title}-ssl") }
+          end
+        end
+
+        context 'without IPv6 address present' do
+          let(:params) do
+            {
+              listen_port: 25,
+              ssl_port: 587,
+              ipv6_enable: true,
+              ssl: true,
+              ssl_cert: 'dummy.crt',
+              ssl_key: 'dummy.key'
+            }
+          end
+          let(:facts) do
+            facts.reject do |k, v|
+              (k == :ipaddress6) or
+                (k == :networking and v.keys.include? 'ip6')
+            end
+          end
+
+          it do
+            is_expected.to contain_concat__fragment("#{title}-header").
+              without_content(%r{^  listen                \[::\]:25 default ipv6only=on;})
+          end
+
+          it do
+            is_expected.to contain_concat__fragment("#{title}-ssl").
+              without_content(%r{^  listen                \[::\]:587 default ipv6only=on;})
           end
         end
       end

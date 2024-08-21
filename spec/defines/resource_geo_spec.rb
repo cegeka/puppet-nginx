@@ -1,8 +1,10 @@
+# frozen_string_literal: true
+
 require 'spec_helper'
 
 describe 'nginx::resource::geo' do
   on_supported_os.each do |os, facts|
-    context "on #{os}" do
+    context "on #{os} with Facter #{facts[:facterversion]} and Puppet #{facts[:puppetversion]}" do
       let(:facts) do
         facts
       end
@@ -12,7 +14,7 @@ describe 'nginx::resource::geo' do
 
       let :pre_condition do
         [
-          'include ::nginx'
+          'include nginx'
         ]
       end
 
@@ -33,9 +35,10 @@ describe 'nginx::resource::geo' do
           let(:params) { default_params }
 
           it { is_expected.to contain_file("/etc/nginx/conf.d/#{title}-geo.conf").that_requires('File[/etc/nginx/conf.d]') }
+
           it do
             is_expected.to contain_file("/etc/nginx/conf.d/#{title}-geo.conf").with(
-              'owner' => 'root',
+              'owner'   => 'root',
               'group'   => 'root',
               'mode'    => '0644',
               'ensure'  => 'file',
@@ -104,6 +107,7 @@ describe 'nginx::resource::geo' do
               let(:params) { default_params.merge(param[:attr].to_sym => param[:value]) }
 
               it { is_expected.to contain_file("/etc/nginx/conf.d/#{title}-geo.conf").with_mode('0644') }
+
               it param[:title] do
                 verify_contents(catalogue, "/etc/nginx/conf.d/#{title}-geo.conf", Array(param[:match]))
                 Array(param[:notmatch]).each do |item|
