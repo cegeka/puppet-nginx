@@ -189,9 +189,6 @@ define nginx::resource::mailhost (
     fail('You must include the nginx base class before using any defined resources')
   }
 
-  $config_dir  = "${nginx::conf_dir}/conf.mail.d"
-  $config_file = "${config_dir}/${name}.conf"
-
   # Add IPv6 Logic Check - Nginx service will not start if ipv6 is enabled
   # and support does not exist for it in the kernel.
   $has_ipaddress6 = ($facts.get('networking.ip6') =~ Stdlib::IP::Address::V6)
